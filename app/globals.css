@@ -19,8 +19,6 @@
   --color-weather-stormy: oklch(0.55 0.28 286);
 }
 
-
-
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -37,6 +35,16 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(100 116 139);
+}
+
+/* Hide scrollbars utility class */
+.hide-scrollbar {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* WebKit browsers */
 }
 
 /* Animation utilities */

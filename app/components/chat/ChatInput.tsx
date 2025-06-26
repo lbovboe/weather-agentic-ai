@@ -14,10 +14,11 @@ export const ChatInput = ({ input, onInputChange, onSubmit, isLoading }: ChatInp
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onInputChange(e.target.value);
 
-    // Auto-resize textarea
+    // Auto-resize textarea with smooth transition
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      const newHeight = Math.min(textareaRef.current.scrollHeight, 200);
+      textareaRef.current.style.height = `${newHeight}px`;
     }
   };
 
@@ -33,28 +34,38 @@ export const ChatInput = ({ input, onInputChange, onSubmit, isLoading }: ChatInp
       onSubmit={onSubmit}
       className="relative"
     >
-      <div className="flex items-end space-x-4">
-        <div className="flex-1 relative group">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask me about the weather... (e.g., 'What's the weather in New York?')"
-            className="w-full resize-none rounded-2xl border-2 border-blue-200/60 bg-white/95 backdrop-blur-sm px-6 py-4 pr-16 text-gray-900 placeholder-gray-500 focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-200/30 transition-all duration-300 shadow-lg shadow-blue-100/50 group-hover:shadow-blue-200/60"
-            rows={1}
-            style={{ minHeight: "56px", maxHeight: "200px" }}
-            disabled={isLoading}
-          />
+      {/* Main input container with flexbox layout */}
+      <div className="flex items-end gap-3 p-1">
+        <div className="flex-1 relative">
+          {/* Input wrapper with consistent border and background */}
+          <div className="relative rounded-2xl border-2 border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-lg shadow-blue-100/50 hover:shadow-blue-200/60 transition-all duration-300 focus-within:border-blue-400 focus-within:ring-4 focus-within:ring-blue-200/30">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask me about the weather... (e.g., 'What's the weather in New York?')"
+              className="w-full resize-none bg-transparent px-6 py-4 pr-16 text-gray-900 placeholder-gray-500 focus:outline-none transition-all duration-200 hide-scrollbar"
+              rows={1}
+              style={{
+                minHeight: "56px",
+                maxHeight: "200px",
+                transition: "height 0.2s ease-out",
+              }}
+              disabled={isLoading}
+            />
 
-          {/* Send Button - Positioned inside textarea */}
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="absolute right-3 bottom-3 flex items-center justify-center w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/25 hover:shadow-blue-600/30 hover:scale-105 disabled:hover:scale-100 disabled:hover:shadow-none group"
-          >
-            <Send className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
-          </button>
+            {/* Send Button - Positioned consistently within the input wrapper */}
+            <div className="absolute right-3 bottom-3 flex items-center">
+              <button
+                type="submit"
+                disabled={!input.trim() || isLoading}
+                className="flex items-center justify-center w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white rounded-xl transition-all duration-200 shadow-lg shadow-blue-500/25 hover:shadow-blue-600/30 hover:scale-105 disabled:hover:scale-100 disabled:hover:shadow-none group"
+              >
+                <Send className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
