@@ -6,49 +6,46 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy-key-for-build",
 });
 
-// Weather API configuration (using OpenWeatherMap as an example)
+// WeatherAPI.com configuration
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY || "demo_key";
-const WEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5";
+const WEATHER_BASE_URL = "http://api.weatherapi.com/v1";
 
-// Tool functions for weather data
+// Tool functions for weather data using WeatherAPI.com
 async function getCurrentWeather(args: { location: string; units?: string }) {
   const { location, units = "metric" } = args;
 
   try {
-    // Get coordinates first
-    const geoResponse = await axios.get(
-      `http://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(location)}&limit=1&appid=${WEATHER_API_KEY}`
-    );
-
-    if (geoResponse.data.length === 0) {
-      return { error: "Location not found. Please try a different location." };
-    }
-
-    const { lat, lon, name, country } = geoResponse.data[0];
-
-    // Get current weather
+    // Get current weather from WeatherAPI.com
     const weatherResponse = await axios.get(
-      `${WEATHER_BASE_URL}/weather?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=${units}`
+      `${WEATHER_BASE_URL}/current.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(location)}&aqi=yes`
     );
 
     const data = weatherResponse.data;
 
+    // Convert units if needed (WeatherAPI.com returns both C and F)
+    const temp = units === "imperial" ? data.current.temp_f : data.current.temp_c;
+    const feelsLike = units === "imperial" ? data.current.feelslike_f : data.current.feelslike_c;
+    const windSpeed = units === "imperial" ? data.current.wind_mph : data.current.wind_kph;
+    const visibility = units === "imperial" ? data.current.vis_miles : data.current.vis_km;
+
     return {
-      location: `${name}, ${country}`,
-      temperature: Math.round(data.main.temp),
-      feels_like: Math.round(data.main.feels_like),
-      humidity: data.main.humidity,
-      pressure: data.main.pressure,
-      visibility: data.visibility / 1000, // Convert to km
-      wind_speed: data.wind.speed,
-      wind_direction: data.wind.deg,
-      weather_description: data.weather[0].description,
-      weather_main: data.weather[0].main,
-      icon: data.weather[0].icon,
+      location: `${data.location.name}, ${data.location.country}`,
+      temperature: Math.round(temp),
+      feels_like: Math.round(feelsLike),
+      humidity: data.current.humidity,
+      pressure: data.current.pressure_mb,
+      visibility: visibility,
+      wind_speed: windSpeed,
+      wind_direction: data.current.wind_degree,
+      wind_dir: data.current.wind_dir,
+      weather_description: data.current.condition.text,
+      weather_main: data.current.condition.text,
+      icon: data.current.condition.icon,
+      uv_index: data.current.uv,
       units: units,
     };
   } catch (error) {
-    console.error("Weather API error:", error);
+    console.error("WeatherAPI error:", error);
     return {
       error: "Unable to fetch weather data. Please try again later.",
       demo_data: {
@@ -57,7 +54,7 @@ async function getCurrentWeather(args: { location: string; units?: string }) {
         feels_like: 25,
         humidity: 65,
         weather_description: "partly cloudy",
-        note: "This is demo data. Please add your OpenWeatherMap API key for real data.",
+        note: "This is demo data. Please add your WeatherAPI.com API key for real data.",
       },
     };
   }
@@ -67,77 +64,44 @@ async function getWeatherForecast(args: { location: string; days?: number; units
   const { location, days = 5, units = "metric" } = args;
 
   try {
-    // Get coordinates first
-    const geoResponse = await axios.get(
-      `http://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(location)}&limit=1&appid=${WEATHER_API_KEY}`
-    );
-
-    if (geoResponse.data.length === 0) {
-      return { error: "Location not found. Please try a different location." };
-    }
-
-    const { lat, lon, name, country } = geoResponse.data[0];
-
-    // Get 5-day forecast
+    // Get forecast from WeatherAPI.com (max 14 days)
+    const forecastDays = Math.min(days, 14);
     const forecastResponse = await axios.get(
-      `${WEATHER_BASE_URL}/forecast?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=${units}`
+      `${WEATHER_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(
+        location
+      )}&days=${forecastDays}&aqi=yes&alerts=yes`
     );
 
     const data = forecastResponse.data;
 
-    // Group by day and get daily summary
-    interface DailyForecast {
-      date: string;
-      temperatures: number[];
-      weather: Array<{ description: string; main: string; icon: string }>;
-      humidity: number[];
-      wind_speed: number[];
-    }
+    // Process forecast data
+    const forecast = data.forecast.forecastday.map((day: any) => {
+      const maxTemp = units === "imperial" ? day.day.maxtemp_f : day.day.maxtemp_c;
+      const minTemp = units === "imperial" ? day.day.mintemp_f : day.day.mintemp_c;
+      const maxWind = units === "imperial" ? day.day.maxwind_mph : day.day.maxwind_kph;
 
-    interface WeatherItem {
-      dt: number;
-      main: { temp: number; humidity: number };
-      weather: Array<{ description: string; main: string; icon: string }>;
-      wind: { speed: number };
-    }
-
-    const dailyForecasts = data.list.reduce((acc: Record<string, DailyForecast>, item: WeatherItem) => {
-      const date = new Date(item.dt * 1000).toDateString();
-      if (!acc[date]) {
-        acc[date] = {
-          date: date,
-          temperatures: [],
-          weather: [],
-          humidity: [],
-          wind_speed: [],
-        };
-      }
-      acc[date].temperatures.push(item.main.temp);
-      acc[date].weather.push(item.weather[0]);
-      acc[date].humidity.push(item.main.humidity);
-      acc[date].wind_speed.push(item.wind.speed);
-      return acc;
-    }, {});
-
-    const dailyValues = Object.values(dailyForecasts) as DailyForecast[];
-    const forecast = dailyValues.slice(0, days).map((day) => ({
-      date: day.date,
-      max_temp: Math.round(Math.max(...day.temperatures)),
-      min_temp: Math.round(Math.min(...day.temperatures)),
-      avg_humidity: Math.round(day.humidity.reduce((a: number, b: number) => a + b, 0) / day.humidity.length),
-      avg_wind_speed: Math.round(day.wind_speed.reduce((a: number, b: number) => a + b, 0) / day.wind_speed.length),
-      weather_description: day.weather[0].description,
-      weather_main: day.weather[0].main,
-      icon: day.weather[0].icon,
-    }));
+      return {
+        date: day.date,
+        max_temp: Math.round(maxTemp),
+        min_temp: Math.round(minTemp),
+        avg_humidity: day.day.avghumidity,
+        max_wind_speed: Math.round(maxWind),
+        weather_description: day.day.condition.text,
+        weather_main: day.day.condition.text,
+        icon: day.day.condition.icon,
+        chance_of_rain: day.day.daily_chance_of_rain || 0,
+        total_precipitation: units === "imperial" ? day.day.totalprecip_in : day.day.totalprecip_mm,
+        uv_index: day.day.uv,
+      };
+    });
 
     return {
-      location: `${name}, ${country}`,
+      location: `${data.location.name}, ${data.location.country}`,
       forecast: forecast,
       units: units,
     };
   } catch (error) {
-    console.error("Forecast API error:", error);
+    console.error("WeatherAPI forecast error:", error);
     return {
       error: "Unable to fetch forecast data. Please try again later.",
       demo_data: {
@@ -146,7 +110,7 @@ async function getWeatherForecast(args: { location: string; days?: number; units
           { date: "Today", max_temp: 25, min_temp: 18, weather_description: "sunny" },
           { date: "Tomorrow", max_temp: 23, min_temp: 16, weather_description: "partly cloudy" },
         ],
-        note: "This is demo data. Please add your OpenWeatherMap API key for real data.",
+        note: "This is demo data. Please add your WeatherAPI.com API key for real data.",
       },
     };
   }
@@ -156,49 +120,41 @@ async function getWeatherAlerts(args: { location: string }) {
   const { location } = args;
 
   try {
-    // Get coordinates first
-    const geoResponse = await axios.get(
-      `http://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(location)}&limit=1&appid=${WEATHER_API_KEY}`
-    );
-
-    if (geoResponse.data.length === 0) {
-      return { error: "Location not found. Please try a different location." };
-    }
-
-    const { lat, lon, name, country } = geoResponse.data[0];
-
-    // Get weather alerts (requires One Call API)
+    // Get weather alerts from WeatherAPI.com
     const alertsResponse = await axios.get(
-      `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&exclude=current,minutely,hourly,daily`
+      `${WEATHER_BASE_URL}/forecast.json?key=${WEATHER_API_KEY}&q=${encodeURIComponent(location)}&days=1&alerts=yes`
     );
 
-    const alerts = alertsResponse.data.alerts || [];
+    const data = alertsResponse.data;
+    const alerts = data.alerts?.alert || [];
 
-    interface WeatherAlert {
-      event: string;
-      description: string;
-      start: number;
-      end: number;
-      sender_name: string;
-    }
+    // Process alerts data
+    const processedAlerts = alerts.map((alert: any) => ({
+      headline: alert.headline,
+      event: alert.event,
+      description: alert.desc,
+      severity: alert.severity,
+      urgency: alert.urgency,
+      areas: alert.areas,
+      certainty: alert.certainty,
+      effective: alert.effective,
+      expires: alert.expires,
+      instruction: alert.instruction,
+    }));
 
     return {
-      location: `${name}, ${country}`,
-      alerts: alerts.map((alert: WeatherAlert) => ({
-        event: alert.event,
-        description: alert.description,
-        start: new Date(alert.start * 1000).toLocaleString(),
-        end: new Date(alert.end * 1000).toLocaleString(),
-        sender_name: alert.sender_name,
-      })),
+      location: `${data.location.name}, ${data.location.country}`,
+      alerts: processedAlerts,
+      alert_count: processedAlerts.length,
     };
-  } catch (apiError) {
-    console.error("Alerts API error:", apiError);
+  } catch (error) {
+    console.error("WeatherAPI alerts error:", error);
     return {
       location: location,
       alerts: [],
+      alert_count: 0,
       message: "No active weather alerts for this location.",
-      note: "Weather alerts require a premium API key.",
+      note: "Weather alerts are included with WeatherAPI.com at no extra cost.",
     };
   }
 }
@@ -241,9 +197,9 @@ const tools = [
           },
           days: {
             type: "number",
-            description: "Number of days for the forecast (1-5)",
+            description: "Number of days for the forecast (1-14)",
             minimum: 1,
-            maximum: 5,
+            maximum: 14,
           },
           units: {
             type: "string",
@@ -296,25 +252,26 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `You are WeatherBot AI, an intelligent weather assistant. You provide accurate, helpful, and engaging weather information. 
+          content: `You are WeatherBot AI, an intelligent weather assistant powered by WeatherAPI.com. You provide accurate, helpful, and engaging weather information. 
 
 Key capabilities:
-- Provide current weather conditions for any location
-- Offer detailed weather forecasts
+- Provide current weather conditions for any location worldwide
+- Offer detailed weather forecasts up to 14 days
 - Share weather alerts and warnings
 - Give weather-related recommendations and insights
 - Explain weather phenomena in an easy-to-understand way
 
 Guidelines:
 - Always be helpful, friendly, and conversational
-- Use the weather tools to get real-time data
+- Use the weather tools to get real-time data from WeatherAPI.com
 - Provide context and interpretation of weather data
 - Offer practical advice based on weather conditions
 - If weather data is unavailable, provide general guidance
 - Format responses clearly with key information highlighted
 - Include relevant emoji to make responses more engaging
+- WeatherAPI.com provides comprehensive weather data including air quality and UV index
 
-Remember: You have access to real-time weather data through your tools. Always use them when users ask about weather conditions, forecasts, or alerts.`,
+Remember: You have access to real-time weather data through WeatherAPI.com. Always use the tools when users ask about weather conditions, forecasts, or alerts.`,
         },
         ...messages,
       ],
@@ -368,25 +325,26 @@ Remember: You have access to real-time weather data through your tools. Always u
         messages: [
           {
             role: "system",
-            content: `You are WeatherBot AI, an intelligent weather assistant. You provide accurate, helpful, and engaging weather information. 
+            content: `You are WeatherBot AI, an intelligent weather assistant powered by WeatherAPI.com. You provide accurate, helpful, and engaging weather information. 
 
 Key capabilities:
-- Provide current weather conditions for any location
-- Offer detailed weather forecasts
+- Provide current weather conditions for any location worldwide
+- Offer detailed weather forecasts up to 14 days
 - Share weather alerts and warnings
 - Give weather-related recommendations and insights
 - Explain weather phenomena in an easy-to-understand way
 
 Guidelines:
 - Always be helpful, friendly, and conversational
-- Use the weather tools to get real-time data
+- Use the weather tools to get real-time data from WeatherAPI.com
 - Provide context and interpretation of weather data
 - Offer practical advice based on weather conditions
 - If weather data is unavailable, provide general guidance
 - Format responses clearly with key information highlighted
 - Include relevant emoji to make responses more engaging
+- WeatherAPI.com provides comprehensive weather data including air quality and UV index
 
-Remember: You have access to real-time weather data through your tools. Always use them when users ask about weather conditions, forecasts, or alerts.`,
+Remember: You have access to real-time weather data through WeatherAPI.com. Always use the tools when users ask about weather conditions, forecasts, or alerts.`,
           },
           ...messages,
           responseMessage,
