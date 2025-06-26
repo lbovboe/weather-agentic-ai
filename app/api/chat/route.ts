@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
 
     // Create initial chat completion with tools
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Using GPT-4o Mini as requested
+      model: "gpt-4.1-nano", // Using GPT-4o Mini as requested
       messages: [
         {
           role: "system",
@@ -283,6 +283,17 @@ Remember: You have access to real-time weather data through WeatherAPI.com. Alwa
 
     const responseMessage = completion.choices[0].message;
 
+    // Debug logging for initial completion
+    console.log("🤖 Initial ChatGPT Response Debug:", {
+      model: completion.model,
+      role: responseMessage.role,
+      hasToolCalls: !!responseMessage.tool_calls,
+      toolCallsCount: responseMessage.tool_calls?.length || 0,
+      messageLength: responseMessage.content?.length || 0,
+      usage: completion.usage,
+      timestamp: new Date().toISOString(),
+    });
+
     // If the model wants to call functions, execute them
     if (responseMessage.tool_calls) {
       const toolMessages = [];
@@ -290,6 +301,13 @@ Remember: You have access to real-time weather data through WeatherAPI.com. Alwa
       for (const toolCall of responseMessage.tool_calls) {
         const { name, arguments: args } = toolCall.function;
         let toolResult;
+
+        console.log("🛠️ Tool Call Debug:", {
+          toolCallId: toolCall.id,
+          functionName: name,
+          arguments: args,
+          timestamp: new Date().toISOString(),
+        });
 
         try {
           const parsedArgs = JSON.parse(args);
@@ -307,6 +325,14 @@ Remember: You have access to real-time weather data through WeatherAPI.com. Alwa
             default:
               toolResult = { error: "Unknown function" };
           }
+
+          console.log("✅ Tool Result Debug:", {
+            toolCallId: toolCall.id,
+            functionName: name,
+            resultSize: JSON.stringify(toolResult).length,
+            hasError: !!(toolResult as any).error,
+            timestamp: new Date().toISOString(),
+          });
         } catch (parseError) {
           console.error("Function argument parsing error:", parseError);
           toolResult = { error: "Error parsing function arguments" };
@@ -321,7 +347,7 @@ Remember: You have access to real-time weather data through WeatherAPI.com. Alwa
 
       // Get final response from OpenAI with tool results
       const finalCompletion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4.1-nano",
         messages: [
           {
             role: "system",
@@ -354,11 +380,34 @@ Remember: You have access to real-time weather data through WeatherAPI.com. Alwa
         max_tokens: 1000,
       });
 
+      // Debug logging for final completion with tool results
+      console.log("🔧 Final ChatGPT Response Debug (with tools):", {
+        model: finalCompletion.model,
+        role: finalCompletion.choices[0].message.role,
+        messageLength: finalCompletion.choices[0].message.content?.length || 0,
+        toolsExecuted: toolMessages.length,
+        toolResults: toolMessages.map((tm) => ({
+          tool_call_id: tm.tool_call_id,
+          contentLength: tm.content.length,
+        })),
+        usage: finalCompletion.usage,
+        timestamp: new Date().toISOString(),
+      });
+
       return NextResponse.json({
         message: finalCompletion.choices[0].message.content,
         usage: finalCompletion.usage,
       });
     }
+
+    // Debug logging for simple response (no tools)
+    console.log("💬 Simple ChatGPT Response Debug (no tools):", {
+      model: completion.model,
+      role: responseMessage.role,
+      messageLength: responseMessage.content?.length || 0,
+      usage: completion.usage,
+      timestamp: new Date().toISOString(),
+    });
 
     return NextResponse.json({
       message: responseMessage.content,
