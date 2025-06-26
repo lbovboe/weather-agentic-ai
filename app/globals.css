@@ -19,18 +19,7 @@
   --color-weather-stormy: oklch(0.55 0.28 286);
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
 
-body {
-  font-family: var(--font-family-sans);
-  line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {

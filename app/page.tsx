@@ -12,15 +12,19 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex flex-col">
+    <div className="h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 grid grid-rows-[auto_1fr_auto]">
+      {/* Header */}
       <Header onNewChat={handleNewChat} />
 
-      <ChatContainer ref={chatRef} />
+      {/* Main Content */}
+      <main className="overflow-hidden">
+        <ChatContainer ref={chatRef} />
+      </main>
 
       {/* Footer */}
-      <footer className="bg-white/50 backdrop-blur-sm border-t border-blue-100 py-4">
+      <footer className="bg-white/60 backdrop-blur-md border-t border-blue-100/50 py-3">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-gray-500">
+          <p className="text-center text-xs text-gray-500">
             Powered by OpenAI GPT-4o Mini • Get real-time weather data from around the world
           </p>
         </div>

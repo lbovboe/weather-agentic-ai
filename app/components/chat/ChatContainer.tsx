@@ -112,35 +112,42 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
     };
 
     return (
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto py-6 space-y-6">
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
+      <div className="h-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-rows-[1fr_auto] gap-4">
+        {/* Messages Area */}
+        <div className="overflow-y-auto overscroll-behavior-contain">
+          <div className="min-h-full flex flex-col justify-start py-6 space-y-6">
+            {messages.map((message) => (
+              <ChatMessage
+                key={message.id}
+                message={message}
+              />
+            ))}
+
+            {isLoading && <LoadingMessage />}
+
+            <div
+              ref={messagesEndRef}
+              className="h-1"
             />
-          ))}
-
-          {isLoading && <LoadingMessage />}
-
-          <div ref={messagesEndRef} />
+          </div>
         </div>
 
-        {/* Input Area */}
-        <div className="py-6">
-          <ChatInput
-            input={input}
-            onInputChange={setInput}
-            onSubmit={handleSubmit}
-            isLoading={isLoading}
-          />
+        {/* Input Area - Fixed Height */}
+        <div className="bg-white/40 backdrop-blur-sm rounded-t-3xl border-t border-blue-100/60 p-6 shadow-lg">
+          <div className="max-w-4xl mx-auto">
+            <ChatInput
+              input={input}
+              onInputChange={setInput}
+              onSubmit={handleSubmit}
+              isLoading={isLoading}
+            />
 
-          <QuickSuggestions
-            suggestions={QUICK_SUGGESTIONS}
-            onSuggestionClick={setInput}
-            isLoading={isLoading}
-          />
+            <QuickSuggestions
+              suggestions={QUICK_SUGGESTIONS}
+              onSuggestionClick={setInput}
+              isLoading={isLoading}
+            />
+          </div>
         </div>
       </div>
     );
