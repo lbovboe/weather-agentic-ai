@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
           toolCallId: toolCall.id,
           functionName: name,
           resultSize: JSON.stringify(toolResult).length,
-          hasError: !!(toolResult as any).error,
+          hasError: !!(toolResult as Record<string, unknown>).error,
           timestamp: new Date().toISOString(),
         });
 

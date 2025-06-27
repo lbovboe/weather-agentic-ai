@@ -1,4 +1,5 @@
 import axios from "axios";
+import { WeatherAPIForecastDay, WeatherAPIAlert } from "../../types";
 
 // WeatherAPI.com configuration
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY || "demo_key";
@@ -85,7 +86,7 @@ export async function getWeatherForecast(args: WeatherForecastArgs) {
     const data = forecastResponse.data;
 
     // Process forecast data
-    const forecast = data.forecast.forecastday.map((day: any) => {
+    const forecast = data.forecast.forecastday.map((day: WeatherAPIForecastDay) => {
       const maxTemp = units === "imperial" ? day.day.maxtemp_f : day.day.maxtemp_c;
       const minTemp = units === "imperial" ? day.day.mintemp_f : day.day.mintemp_c;
       const maxWind = units === "imperial" ? day.day.maxwind_mph : day.day.maxwind_kph;
@@ -139,7 +140,7 @@ export async function getWeatherAlerts(args: WeatherAlertsArgs) {
     const alerts = data.alerts?.alert || [];
 
     // Process alerts data
-    const processedAlerts = alerts.map((alert: any) => ({
+    const processedAlerts = alerts.map((alert: WeatherAPIAlert) => ({
       headline: alert.headline,
       event: alert.event,
       description: alert.desc,

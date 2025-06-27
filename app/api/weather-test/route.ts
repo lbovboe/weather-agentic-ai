@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
+import { WeatherAPIError, WeatherAPIForecastDay, WeatherAPIAlert } from "../../types";
 
 // WeatherAPI.com configuration
 const WEATHER_API_KEY = process.env.WEATHER_API_KEY || "demo_key";
@@ -25,16 +26,17 @@ async function testCurrentWeather(location: string) {
       uv_index: data.current.uv,
       api_status: "WeatherAPI.com connection successful ✅",
     };
-  } catch (error: any) {
-    console.error("WeatherAPI test error:", error);
+  } catch (error: unknown) {
+    const apiError = error as WeatherAPIError;
+    console.error("WeatherAPI test error:", apiError);
 
-    if (error.response?.status === 401) {
+    if (apiError.response?.status === 401) {
       return {
         success: false,
         error: "Invalid API key. Please check your WEATHER_API_KEY in .env file",
         api_status: "Authentication failed ❌",
       };
-    } else if (error.response?.status === 400) {
+    } else if (apiError.response?.status === 400) {
       return {
         success: false,
         error: "Invalid location. Please try a different location name",
@@ -140,7 +142,7 @@ async function testForecast(location: string) {
     );
 
     const data = forecastResponse.data;
-    const forecast = data.forecast.forecastday.map((day: any) => ({
+    const forecast = data.forecast.forecastday.map((day: WeatherAPIForecastDay) => ({
       date: day.date,
       max_temp: `${day.day.maxtemp_c}°C / ${day.day.maxtemp_f}°F`,
       min_temp: `${day.day.mintemp_c}°C / ${day.day.mintemp_f}°F`,
@@ -154,11 +156,12 @@ async function testForecast(location: string) {
       forecast: forecast,
       api_status: "WeatherAPI.com forecast test successful ✅",
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const apiError = error as WeatherAPIError;
     return {
       success: false,
       error: "Forecast test failed",
-      details: error.response?.data?.error?.message || error.message,
+      details: apiError.response?.data?.error?.message || apiError.message,
       api_status: "Forecast test failed ❌",
     };
   }
@@ -180,7 +183,7 @@ async function testAlerts(location: string) {
       alerts_count: alerts.length,
       alerts:
         alerts.length > 0
-          ? alerts.map((alert: any) => ({
+          ? alerts.map((alert: WeatherAPIAlert) => ({
               headline: alert.headline,
               severity: alert.severity,
               areas: alert.areas,
@@ -188,11 +191,12 @@ async function testAlerts(location: string) {
           : "No active alerts",
       api_status: "WeatherAPI.com alerts test successful ✅",
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const apiError = error as WeatherAPIError;
     return {
       success: false,
       error: "Alerts test failed",
-      details: error.response?.data?.error?.message || error.message,
+      details: apiError.response?.data?.error?.message || apiError.message,
       api_status: "Alerts test failed ❌",
     };
   }
