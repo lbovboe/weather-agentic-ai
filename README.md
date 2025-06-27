@@ -42,7 +42,7 @@ Get WeatherBot AI running in under 5 minutes:
 
 ```bash
 # 1. Clone and install
-git clone <your-repo-url>
+git clone https://github.com/lbovboe/weather-agentic-ai.git
 cd weather-agentic-ai
 npm install
 
@@ -137,8 +137,13 @@ graph TB
     subgraph "API Layer"
         E[Chat API Route] --> F[OpenAI GPT-4o Mini]
         G[Weather Test Route] --> H[OpenWeatherMap API]
-        F --> I[Function Calling]
-        I --> H
+        F --> I[Function Calling Detection]
+        I --> J[Weather Tool Execution]
+        J --> H
+        H --> K[Weather Data Response]
+        K --> F
+        F --> L[Enhanced AI Processing]
+        L --> M[Generated Summary Response]
     end
 
     subgraph "External Services"
@@ -148,6 +153,8 @@ graph TB
 
     A --> E
     A --> G
+    M --> E
+    E --> A
 ```
 
 ### **Folder Structure**
@@ -177,10 +184,12 @@ weather-agentic-ai/
 
 1. **User Input** → Chat Interface Component
 2. **Message Processing** → Chat API Route (`/api/chat`)
-3. **AI Processing** → OpenAI GPT-4o Mini with Function Calling
-4. **Weather Data** → OpenWeatherMap API (when weather queries detected)
-5. **Response Generation** → Structured AI response with weather data
-6. **UI Update** → Real-time message display with animations
+3. **AI Processing** → OpenAI GPT-4o Mini with Function Calling Detection
+4. **Tool Execution** → Weather Tool calls OpenWeatherMap API (when weather queries detected)
+5. **Data Return** → Weather data returns to OpenAI GPT-4o Mini
+6. **Enhanced Processing** → GPT-4o Mini processes weather data and generates enhanced summary
+7. **Response Generation** → Structured AI response with enriched weather insights
+8. **UI Update** → Real-time message display with animations
 
 ---
 
@@ -404,7 +413,7 @@ npm run test:e2e
 
 ### **Vercel (Recommended)**
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/weather-agentic-ai)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/lbovboe/weather-agentic-ai)
 
 1. **Connect Repository**: Link GitHub/GitLab repo to Vercel
 2. **Environment Variables**: Add all required environment variables
@@ -609,7 +618,7 @@ git clone https://github.com/YOUR_USERNAME/weather-agentic-ai.git
 cd weather-agentic-ai
 
 # Add upstream remote
-git remote add upstream https://github.com/ORIGINAL_OWNER/weather-agentic-ai.git
+git remote add upstream https://github.com/lbovboe/weather-agentic-ai.git
 
 # Install dependencies
 npm install
