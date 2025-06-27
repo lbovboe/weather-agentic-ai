@@ -24,13 +24,18 @@ export async function POST(request: NextRequest) {
 
     // Create initial chat completion with tools
     const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-nano", 
+      model: "gpt-4.1-nano",
+      // 💡 CONVERSATION MEMORY IMPLEMENTATION:
+      // OpenAI's API is completely stateless - it has NO memory of previous conversations.
+      // To create the illusion of "memory", we manually send the ENTIRE conversation history
+      // with every single API call. The frontend maintains all messages in state and sends
+      // them here via the `messages` parameter. This is the standard approach for chat apps.
       messages: [
         {
           role: "system",
           content: weatherSystemPrompt,
         },
-        ...messages,
+        ...messages, // 👈 This spreads ALL previous messages (user + assistant) from the conversation
       ],
       tools: weatherTools,
       tool_choice: "auto",
@@ -86,14 +91,15 @@ export async function POST(request: NextRequest) {
       // Get final response from OpenAI with tool results
       const finalCompletion = await openai.chat.completions.create({
         model: "gpt-4.1-nano",
+        // 💡 Again, sending ENTIRE conversation history + tool results for context
         messages: [
           {
             role: "system",
             content: weatherSystemPrompt,
           },
-          ...messages,
-          responseMessage,
-          ...toolMessages,
+          ...messages, // 👈 All previous conversation messages
+          responseMessage, // 👈 The assistant's response with tool_calls
+          ...toolMessages, // 👈 Results from executing the weather tools
         ],
         temperature: 0.7,
         max_tokens: 1000,

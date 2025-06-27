@@ -30,6 +30,10 @@ export interface ChatContainerRef {
 
 export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
   ({ initialMessages = [INITIAL_MESSAGE] }, ref) => {
+    // 💡 FRONTEND CONVERSATION MEMORY:
+    // This `messages` state is the SOURCE OF TRUTH for the entire conversation history.
+    // Every user message and AI response gets stored here. When we send a new message
+    // to the API, we include ALL messages from this array to simulate "memory".
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -67,6 +71,7 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
         timestamp: new Date(),
       };
 
+      // 👈 Add user message to our conversation history state
       setMessages((prev) => [...prev, userMessage]);
       setInput("");
       setIsLoading(true);
@@ -78,6 +83,10 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            // 🚀 KEY CONVERSATION MEMORY LOGIC:
+            // We send ALL previous messages + the new user message to the API.
+            // This creates the illusion that ChatGPT "remembers" the conversation.
+            // Without this, each API call would be independent with no context.
             messages: [...messages, userMessage].map(({ role, content }) => ({ role, content })),
           }),
         });
@@ -99,6 +108,8 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
           timestamp: new Date(),
         };
 
+        // 👈 Add AI response to our conversation history state
+        // This ensures the AI's response is included in future API calls
         setMessages((prev) => [...prev, assistantMessage]);
       } catch (error) {
         console.error("Chat error:", error);
