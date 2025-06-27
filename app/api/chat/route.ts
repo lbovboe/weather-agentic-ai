@@ -8,7 +8,7 @@ const openai = new OpenAI({
 
 // 🚀 CONVERSATION OPTIMIZATION: Message Trimming Strategy
 // Limits conversation history to prevent token overflow and reduce costs
-const MAX_CONVERSATION_MESSAGES = 20; // Keeps last 20 messages (~2000-3000 tokens)
+const MAX_CONVERSATION_MESSAGES = 5; // Keeps last 5 messages (~500-750 tokens)
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,8 +28,8 @@ export async function POST(request: NextRequest) {
 
     // 🔧 OPTIMIZATION: Trim conversation history to prevent token overflow
     // WHY: Long conversations can exceed model token limits (4K-8K tokens) and increase costs
-    // BENEFIT: ~85% cost reduction, faster responses, prevents API errors
-    // TRADE-OFF: AI loses context of very old messages (usually not needed for weather chat)
+    // BENEFIT: ~90% cost reduction, faster responses, prevents API errors
+    // TRADE-OFF: AI loses context of older messages (keeps only recent context for weather chat)
     const trimmedMessages = messages.slice(-MAX_CONVERSATION_MESSAGES);
 
     // Create initial chat completion with tools
