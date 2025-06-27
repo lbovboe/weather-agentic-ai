@@ -35,6 +35,9 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
+    // Check if user has started chatting (more than just the initial message)
+    const hasUserMessages = messages.some((message) => message.role === "user");
+
     const scrollToBottom = () => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
@@ -112,10 +115,10 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
     };
 
     return (
-      <div className="h-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-rows-[1fr_auto] gap-4">
+      <div className="h-full w-full px-6 sm:px-8 lg:px-12 xl:px-16 grid grid-rows-[1fr_auto] gap-4">
         {/* Messages Area */}
         <div className="overflow-y-auto overscroll-behavior-contain">
-          <div className="min-h-full flex flex-col justify-start py-6 space-y-6">
+          <div className="min-h-full flex flex-col justify-start py-6 space-y-6 max-w-7xl mx-auto">
             {messages.map((message) => (
               <ChatMessage
                 key={message.id}
@@ -134,7 +137,7 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
 
         {/* Input Area - Fixed Height */}
         <div className="bg-white/40 backdrop-blur-sm rounded-t-3xl border-t border-blue-100/60 p-6 shadow-lg">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-7xl mx-auto">
             <ChatInput
               input={input}
               onInputChange={setInput}
@@ -142,11 +145,14 @@ export const ChatContainer = forwardRef<ChatContainerRef, ChatContainerProps>(
               isLoading={isLoading}
             />
 
-            <QuickSuggestions
-              suggestions={QUICK_SUGGESTIONS}
-              onSuggestionClick={setInput}
-              isLoading={isLoading}
-            />
+            {/* Only show QuickSuggestions when user hasn't started chatting */}
+            {!hasUserMessages && (
+              <QuickSuggestions
+                suggestions={QUICK_SUGGESTIONS}
+                onSuggestionClick={setInput}
+                isLoading={isLoading}
+              />
+            )}
           </div>
         </div>
       </div>
