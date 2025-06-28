@@ -1,6 +1,6 @@
 import { WeatherIcon } from "../ui/WeatherIcon";
 import { Message } from "../../types";
-
+import ReactMarkdown from "react-markdown";
 interface ChatMessageProps {
   message: Message;
 }
@@ -32,7 +32,7 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
             message.role === "user" ? "text-white" : "text-gray-800"
           }`}
         >
-          {message.content}
+          <ReactMarkdown>{message.content}</ReactMarkdown>
         </div>
 
         <div className={`text-xs mt-3 font-medium ${message.role === "user" ? "text-blue-100" : "text-gray-500"}`}>
