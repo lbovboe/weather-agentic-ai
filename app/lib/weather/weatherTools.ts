@@ -71,6 +71,9 @@ export const weatherTools = [
 ];
 
 // System prompt for the weather assistant
+// how well the current version
+// define metrics on how to evaluate this prompt and how the prompt perform
+// how many time does it achieve the objective. 
 export const weatherSystemPrompt = `You are WeatherBot AI, an intelligent weather assistant powered by WeatherAPI.com. You provide accurate, helpful, and engaging weather information. 
 
 Key capabilities:
