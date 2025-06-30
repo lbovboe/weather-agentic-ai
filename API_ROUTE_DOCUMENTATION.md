@@ -27,6 +27,9 @@ POST /api/chat
 # Required environment variables
 OPENAI_API_KEY=your_openai_api_key_here
 WEATHER_API_KEY=your_weatherapi_key_here
+
+# Optional relevance classification settings
+RELEVANCE_STRICTNESS=standard  # loose | standard | strict
 ```
 
 ## 📨 Request Format
@@ -79,7 +82,159 @@ POST /api/chat
 }
 ```
 
+## 🎯 Relevance Classification System
+
+The chat API now includes an intelligent relevance classification system that ensures queries stay focused on weather-related topics. This system provides quality control and maintains the assistant's specialized purpose.
+
+### Classification Levels
+
+```typescript
+enum RelevanceLevel {
+  HIGHLY_RELEVANT = "highly_relevant", // Clear weather topics
+  RELEVANT = "relevant", // Weather-adjacent content
+  NEUTRAL = "neutral", // Greetings, basic conversation
+  IRRELEVANT = "irrelevant", // Non-weather topics (rejected)
+}
+```
+
+### Relevance Classification Process
+
+1. **Quick Keyword Filter** - Fast pre-filtering using weather/non-weather keywords
+2. **LLM Classification** - GPT-4o-mini classification for edge cases
+3. **Confidence Scoring** - 0.0-1.0 confidence in classification decision
+4. **Decision Making** - Accept/reject based on relevance and confidence
+
+### Response Format for Rejected Queries
+
+```json
+{
+  "message": "I'm WeatherBot AI, specialized in providing weather information and forecasts. Instead of that topic, I can help you with: What's the weather forecast for your location?\n\nHere are some weather questions I can help with:\n🌤️ \"What's the weather in New York?\"\n📅 \"Show me the 5-day forecast for London\"\n⚠️ \"Are there any weather alerts for my area?\"\n🌡️ \"What should I wear for today's weather?\"\n🌍 \"Explain how hurricanes form\"\n\nFeel free to ask me anything weather-related! 🌦️",
+  "rejected": true,
+  "reason": "query_not_weather_related",
+  "classification": {
+    "isRelevant": false,
+    "level": "irrelevant",
+    "confidence": 0.98,
+    "reasoning": "Programming question unrelated to weather",
+    "suggestedRedirect": "What's the weather forecast for your location?"
+  }
+}
+```
+
+### Classification Examples
+
+**Accepted Queries:**
+
+- ✅ "What's the weather in Tokyo?"
+- ✅ "Will it rain tomorrow?"
+- ✅ "What should I wear for today's weather?"
+- ✅ "Explain how hurricanes form"
+- ✅ "Hello there!" (basic conversation)
+
+**Rejected Queries:**
+
+- 🚫 "What is TypeScript?"
+- 🚫 "How do I write JavaScript functions?"
+- 🚫 "Tell me about React components"
+- 🚫 "What's the best programming language?"
+
+## 📊 Metrics API
+
+The system includes comprehensive metrics tracking for monitoring classification performance and overall system health.
+
+### Endpoint: `/api/metrics`
+
+**Method:** GET
+
+#### Query Parameters
+
+- `hours` - Number of hours for recent metrics (default: 24)
+- `detailed` - Include recent interactions (`true`/`false`)
+
+#### Response Format
+
+```json
+{
+  "timestamp": "2024-01-20T10:30:00.000Z",
+  "relevance": {
+    "totalQueries": 150,
+    "relevantQueries": 117,
+    "irrelevantQueries": 33,
+    "accuracyRate": 94,
+    "rejectionRate": 22,
+    "averageConfidence": 89,
+    "falsePositives": 2,
+    "falseNegatives": 1,
+    "levelDistribution": {
+      "highly_relevant": 89,
+      "relevant": 28,
+      "neutral": 15,
+      "irrelevant": 33
+    }
+  },
+  "performance": {
+    "averageResponseTime": 340,
+    "successRate": 98,
+    "averageTokensUsed": 245,
+    "totalInteractions": 150
+  },
+  "evaluation": {
+    "alertLevel": "low",
+    "issues": [],
+    "recommendation": "Classification performance is optimal."
+  }
+}
+```
+
+### Endpoint: `/api/metrics`
+
+**Method:** POST
+
+#### Description
+
+Records user feedback about classification accuracy.
+
+#### Request Body
+
+```json
+{
+  "isClassificationWrong": true,
+  "actuallyWeatherRelated": false
+}
+```
+
 ## 🔄 Detailed Workflow Steps
+
+### Step 0: Relevance Classification (NEW)
+
+```typescript
+// Get the latest user message
+const latestUserMessage = messages.filter((m) => m.role === "user").pop();
+const userQuery = latestUserMessage.content;
+
+// Quick keyword check first (performance optimization)
+const quickCheck = quickRelevanceCheck(userQuery);
+let relevanceResult;
+
+if (quickCheck.skip) {
+  // Skip full LLM classification for obvious cases
+  relevanceResult = {
+    isRelevant: quickCheck.isRelevant,
+    level: quickCheck.isRelevant ? RelevanceLevel.HIGHLY_RELEVANT : RelevanceLevel.IRRELEVANT,
+    confidence: 0.95,
+    reasoning: quickCheck.isRelevant ? "Contains obvious weather keywords" : "Contains obvious non-weather keywords",
+  };
+} else {
+  // Full LLM classification for edge cases
+  relevanceResult = await classifyQueryRelevance(userQuery);
+}
+
+// Handle irrelevant queries
+if (!relevanceResult.isRelevant) {
+  const redirectResponse = generateIrrelevantResponse(relevanceResult);
+  // Record metrics and return rejection response
+}
+```
 
 ### Step 1: Request Validation
 
@@ -439,7 +594,7 @@ return NextResponse.json({
 
 ## 📤 Response Formats
 
-### Successful Response (with tools)
+### Successful Response (with tools) - Weather Query Accepted
 
 ```json
 {
@@ -448,11 +603,22 @@ return NextResponse.json({
     "prompt_tokens": 387,
     "completion_tokens": 89,
     "total_tokens": 476
+  },
+  "classification": {
+    "isRelevant": true,
+    "level": "highly_relevant",
+    "confidence": 0.98,
+    "reasoning": "Clear weather information request"
+  },
+  "metrics": {
+    "responseTimeMs": 450,
+    "toolCallsExecuted": 1,
+    "totalTokensUsed": 678
   }
 }
 ```
 
-### Successful Response (no tools needed)
+### Successful Response (no tools needed) - Conversational
 
 ```json
 {
@@ -461,6 +627,34 @@ return NextResponse.json({
     "prompt_tokens": 156,
     "completion_tokens": 45,
     "total_tokens": 201
+  },
+  "classification": {
+    "isRelevant": true,
+    "level": "neutral",
+    "confidence": 0.92,
+    "reasoning": "Basic conversational greeting"
+  },
+  "metrics": {
+    "responseTimeMs": 180,
+    "toolCallsExecuted": 0,
+    "totalTokensUsed": 201
+  }
+}
+```
+
+### Rejected Response - Non-Weather Query
+
+```json
+{
+  "message": "I'm WeatherBot AI, specialized in providing weather information and forecasts. Instead of that topic, I can help you with: What's the weather forecast for your location?\n\nHere are some weather questions I can help with:\n🌤️ \"What's the weather in New York?\"\n📅 \"Show me the 5-day forecast for London\"\n⚠️ \"Are there any weather alerts for my area?\"\n🌡️ \"What should I wear for today's weather?\"\n🌍 \"Explain how hurricanes form\"\n\nFeel free to ask me anything weather-related! 🌦️",
+  "rejected": true,
+  "reason": "query_not_weather_related",
+  "classification": {
+    "isRelevant": false,
+    "level": "irrelevant",
+    "confidence": 0.98,
+    "reasoning": "Programming question unrelated to weather",
+    "suggestedRedirect": "What's the weather forecast for your location?"
   }
 }
 ```

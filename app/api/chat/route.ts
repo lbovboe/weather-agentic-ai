@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import { weatherTools, weatherSystemPrompt, executeWeatherTool } from "../../lib/weather";
+import {
+  weatherTools,
+  weatherSystemPrompt,
+  executeWeatherTool,
+  classifyQueryRelevance,
+  quickRelevanceCheck,
+  generateIrrelevantResponse,
+  metricsStore,
+  createInteractionRecord,
+  logMetricsSummary,
+  RelevanceLevel,
+  RelevanceResult,
+} from "../../lib/weather";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "dummy-key-for-build",
@@ -11,6 +23,8 @@ const openai = new OpenAI({
 const MAX_CONVERSATION_MESSAGES = 5; // Keeps last 5 messages (~500-750 tokens)
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
   try {
     // Check if API key is configured
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "dummy-key-for-build") {
@@ -26,47 +40,107 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid messages format" }, { status: 400 });
     }
 
+    // Get the latest user message for relevance checking
+    const latestUserMessage = messages.filter((m) => m.role === "user").pop();
+    if (!latestUserMessage?.content) {
+      return NextResponse.json({ error: "No user message found" }, { status: 400 });
+    }
+
+    const userQuery = latestUserMessage.content;
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // 🎯 RELEVANCE CLASSIFICATION: Check if query is weather-related
+    console.log("🔍 Starting relevance classification for:", userQuery);
+
+    // Quick keyword check first (performance optimization)
+    const quickCheck = quickRelevanceCheck(userQuery);
+    let relevanceResult: RelevanceResult;
+
+    if (quickCheck.skip) {
+      // Skip full LLM classification for obvious cases
+      relevanceResult = {
+        isRelevant: quickCheck.isRelevant,
+        level: quickCheck.isRelevant ? RelevanceLevel.HIGHLY_RELEVANT : RelevanceLevel.IRRELEVANT,
+        confidence: 0.95,
+        reasoning: quickCheck.isRelevant
+          ? "Contains obvious weather keywords"
+          : "Contains obvious non-weather keywords",
+      };
+      console.log("⚡ Quick classification result:", relevanceResult);
+    } else {
+      // Full LLM classification for edge cases
+      const classificationStart = Date.now();
+      relevanceResult = await classifyQueryRelevance(userQuery);
+      const classificationTime = Date.now() - classificationStart;
+      console.log("🤖 Full LLM classification result:", {
+        ...relevanceResult,
+        classificationTimeMs: classificationTime,
+      });
+    }
+
+    // 🚫 HANDLE IRRELEVANT QUERIES: Return helpful redirect message
+    if (!relevanceResult.isRelevant) {
+      const redirectResponse = generateIrrelevantResponse(relevanceResult);
+      const responseTime = Date.now() - startTime;
+
+      // Record metrics for rejected query
+      const performanceMetrics = {
+        responseTimeMs: responseTime,
+        toolCallsExecuted: 0,
+        tokensUsed: 0, // No main LLM call for rejected queries
+        completedSuccessfully: true,
+      };
+
+      const interactionRecord = createInteractionRecord(
+        sessionId,
+        userQuery,
+        relevanceResult,
+        performanceMetrics,
+        false, // no weather data retrieved
+        false // no error occurred
+      );
+
+      metricsStore.recordInteraction(interactionRecord);
+
+      console.log("🚫 Query Rejected - Not Weather Related:", {
+        query: userQuery.substring(0, 50) + "...",
+        level: relevanceResult.level,
+        confidence: relevanceResult.confidence,
+        reasoning: relevanceResult.reasoning,
+        responseTimeMs: responseTime,
+      });
+
+      return NextResponse.json({
+        message: redirectResponse,
+        rejected: true,
+        reason: "query_not_weather_related",
+        classification: relevanceResult,
+      });
+    }
+
     // 🔧 OPTIMIZATION: Trim conversation history to prevent token overflow
-    // WHY: Long conversations can exceed model token limits (4K-8K tokens) and increase costs
-    // BENEFIT: ~90% cost reduction, faster responses, prevents API errors
-    // TRADE-OFF: AI loses context of older messages (keeps only recent context for weather chat)
     const trimmedMessages = messages.slice(-MAX_CONVERSATION_MESSAGES);
+
+    // ✅ PROCESS WEATHER-RELATED QUERY: Continue with normal weather assistant flow
+    console.log("✅ Query Accepted - Weather Related:", {
+      query: userQuery.substring(0, 50) + "...",
+      level: relevanceResult.level,
+      confidence: relevanceResult.confidence,
+    });
 
     // Create initial chat completion with tools
     const completion = await openai.chat.completions.create({
       model: "gpt-4.1-nano",
-      // 💡 CONVERSATION MEMORY IMPLEMENTATION:
-      // OpenAI's API is completely stateless - it has NO memory of previous conversations.
-      // To create the illusion of "memory", we manually send the ENTIRE conversation history
-      // with every single API call. The frontend maintains all messages in state and sends
-      // them here via the `messages` parameter. This is the standard approach for chat apps.
       messages: [
         {
-          // 🎭 ROLE EXPLAINED: Defines who is "speaking" in the conversation
-          // - "system": Sets AI behavior, personality, and instructions (like a character prompt)
-          // - "user": Human/user messages and questions
-          // - "assistant": AI responses and answers
-          // - "tool": Results from function/tool executions (weather API data, etc.)
           role: "system",
           content: weatherSystemPrompt,
         },
-        ...trimmedMessages, // 👈 Now using TRIMMED messages instead of ALL messages
+        ...trimmedMessages,
       ],
       tools: weatherTools,
       tool_choice: "auto",
-      // 🌡️ TEMPERATURE EXPLAINED: Controls AI creativity/randomness (0.0 - 2.0)
-      // - 0.0: Completely deterministic, same input = same output every time
-      // - 0.7: Balanced creativity and consistency (RECOMMENDED for most use cases)
-      // - 1.0: Standard creativity level, good for general conversations
-      // - 2.0: Very creative/random, might be unpredictable or incoherent
-      // Weather apps use 0.7 for helpful but consistent responses
       temperature: 0.7,
-      // 🔢 MAX_TOKENS EXPLAINED: Maximum OUTPUT tokens (NOT input tokens!)
-      // - This limits how LONG the AI's response can be, not the input size
-      // - 1 token ≈ 0.75 words, so 1000 tokens ≈ 750 words max response
-      // - Input tokens are counted separately and have different limits
-      // - If response hits this limit, it gets cut off mid-sentence
-      // - Weather responses are usually concise, so 1000 is generous
       max_tokens: 1000,
     });
 
@@ -75,9 +149,6 @@ export async function POST(request: NextRequest) {
     // Debug logging for initial completion
     console.log("🤖 Initial ChatGPT Response Debug:", {
       model: completion.model,
-      // 📝 RESPONSE ROLE: Will always be "assistant" for direct AI responses
-      // Even when the AI wants to call tools, the role is still "assistant"
-      // but the message will contain "tool_calls" instead of just "content"
       role: responseMessage.role,
       hasToolCalls: !!responseMessage.tool_calls,
       toolCallsCount: responseMessage.tool_calls?.length || 0,
@@ -86,12 +157,17 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
+    let weatherDataRetrieved = false;
+    let totalTokensUsed = completion.usage?.total_tokens || 0;
+    let toolCallsExecuted = 0;
+
     // If the model wants to call functions, execute them
     if (responseMessage.tool_calls) {
       const toolMessages = [];
 
       for (const toolCall of responseMessage.tool_calls) {
         const { name, arguments: args } = toolCall.function;
+        toolCallsExecuted++;
 
         console.log("🛠️ Tool Call Debug:", {
           toolCallId: toolCall.id,
@@ -102,6 +178,7 @@ export async function POST(request: NextRequest) {
 
         // Execute the weather tool
         const toolResult = await executeWeatherTool(name, args);
+        weatherDataRetrieved = true;
 
         console.log("✅ Tool Result Debug:", {
           toolCallId: toolCall.id,
@@ -112,10 +189,6 @@ export async function POST(request: NextRequest) {
         });
 
         toolMessages.push({
-          // 🔧 TOOL ROLE: Special role for function execution results
-          // - This creates a "tool" message containing the weather API data
-          // - The tool_call_id links this result back to the original tool request
-          // - This is how the AI learns what happened when it called the weather function
           role: "tool" as const,
           content: JSON.stringify(toolResult),
           tool_call_id: toolCall.id,
@@ -125,49 +198,61 @@ export async function POST(request: NextRequest) {
       // Get final response from OpenAI with tool results
       const finalCompletion = await openai.chat.completions.create({
         model: "gpt-4.1-nano",
-        // 💡 Again, sending TRIMMED conversation history + tool results for context
-        // Using same trimmed messages for consistency and optimization
-        //
-        // 🔄 MESSAGE FLOW WITH ROLES:
-        // 1. system: "You are a weather assistant..." (sets behavior)
-        // 2. user: "What's the weather in Tokyo?" (human question)
-        // 3. assistant: [tool_calls to get weather] (AI wants to call function)
-        // 4. tool: {"temperature": 25, "condition": "sunny"} (function result)
-        // 5. assistant: "It's 25°C and sunny in Tokyo!" (final AI response)
         messages: [
           {
             role: "system",
             content: weatherSystemPrompt,
           },
-          ...trimmedMessages, // 👈 Trimmed conversation messages (optimized)
-          responseMessage, // 👈 The assistant's response with tool_calls
-          ...toolMessages, // 👈 Results from executing the weather tools (role: "tool")
+          ...trimmedMessages,
+          responseMessage,
+          ...toolMessages,
         ],
-        // 🌡️ Same temperature setting for consistency in conversation tone
         temperature: 0.7,
-        // 🔢 Same max_tokens limit for the final response after processing tools
         max_tokens: 1000,
       });
+
+      totalTokensUsed += finalCompletion.usage?.total_tokens || 0;
 
       // Debug logging for final completion with tool results
       console.log("🔧 Final ChatGPT Response Debug (with tools):", {
         model: finalCompletion.model,
-        // 📝 FINAL RESPONSE ROLE: Always "assistant" for the final formatted answer
-        // After processing tool results, AI gives a human-friendly response as "assistant"
         role: finalCompletion.choices[0].message.role,
         messageLength: finalCompletion.choices[0].message.content?.length || 0,
         toolsExecuted: toolMessages.length,
-        toolResults: toolMessages.map((tm) => ({
-          tool_call_id: tm.tool_call_id,
-          contentLength: tm.content.length,
-        })),
         usage: finalCompletion.usage,
         timestamp: new Date().toISOString(),
       });
 
+      const responseTime = Date.now() - startTime;
+
+      // 📊 RECORD METRICS: Track successful weather interaction
+      const performanceMetrics = {
+        responseTimeMs: responseTime,
+        toolCallsExecuted,
+        tokensUsed: totalTokensUsed,
+        completedSuccessfully: true,
+      };
+
+      const interactionRecord = createInteractionRecord(
+        sessionId,
+        userQuery,
+        relevanceResult,
+        performanceMetrics,
+        weatherDataRetrieved,
+        false
+      );
+
+      metricsStore.recordInteraction(interactionRecord);
+
       return NextResponse.json({
         message: finalCompletion.choices[0].message.content,
         usage: finalCompletion.usage,
+        classification: relevanceResult,
+        metrics: {
+          responseTimeMs: responseTime,
+          toolCallsExecuted,
+          totalTokensUsed,
+        },
       });
     }
 
@@ -180,12 +265,91 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
+    const responseTime = Date.now() - startTime;
+
+    // 📊 RECORD METRICS: Track simple weather conversation
+    const performanceMetrics = {
+      responseTimeMs: responseTime,
+      toolCallsExecuted: 0,
+      tokensUsed: totalTokensUsed,
+      completedSuccessfully: true,
+    };
+
+    const interactionRecord = createInteractionRecord(
+      sessionId,
+      userQuery,
+      relevanceResult,
+      performanceMetrics,
+      weatherDataRetrieved,
+      false
+    );
+
+    metricsStore.recordInteraction(interactionRecord);
+
     return NextResponse.json({
       message: responseMessage.content,
       usage: completion.usage,
+      classification: relevanceResult,
+      metrics: {
+        responseTimeMs: responseTime,
+        toolCallsExecuted: 0,
+        totalTokensUsed,
+      },
     });
   } catch (error) {
     console.error("Chat API error:", error);
-    return NextResponse.json({ error: "Failed to process chat request. Please try again." }, { status: 500 });
+
+    const responseTime = Date.now() - startTime;
+
+    // 📊 RECORD ERROR METRICS: Track failed interactions
+    try {
+      const sessionId = `error_session_${Date.now()}`;
+      const errorClassification: RelevanceResult = {
+        isRelevant: true, // Assume relevant since we couldn't classify
+        level: RelevanceLevel.NEUTRAL,
+        confidence: 0.5,
+        reasoning: "Error occurred before classification",
+      };
+
+      const performanceMetrics = {
+        responseTimeMs: responseTime,
+        toolCallsExecuted: 0,
+        tokensUsed: 0,
+        completedSuccessfully: false,
+      };
+
+      const interactionRecord = createInteractionRecord(
+        sessionId,
+        "Error occurred",
+        errorClassification,
+        performanceMetrics,
+        false,
+        true
+      );
+
+      metricsStore.recordInteraction(interactionRecord);
+    } catch (metricsError) {
+      console.error("Failed to record error metrics:", metricsError);
+    }
+
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+
+    return NextResponse.json(
+      {
+        error: "Failed to process chat request. Please try again.",
+        errorDetails: process.env.NODE_ENV === "development" ? errorMessage : undefined,
+      },
+      { status: 500 }
+    );
+  } finally {
+    // 📈 PERIODIC METRICS LOGGING: Log summary every 10 interactions
+    try {
+      const stats = metricsStore.getRelevanceStats();
+      if (stats.totalQueries > 0 && stats.totalQueries % 10 === 0) {
+        logMetricsSummary();
+      }
+    } catch (metricsError) {
+      console.error("Failed to log metrics summary:", metricsError);
+    }
   }
 }

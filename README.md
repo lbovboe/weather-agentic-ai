@@ -135,8 +135,15 @@ graph TB
     end
 
     subgraph "API Layer"
-        E[Chat API Route] --> F[OpenAI GPT-4o Mini]
-        G[Weather Test Route] --> H[OpenWeatherMap API]
+        E[Chat API Route] --> R[Relevance Classifier]
+        R --> R1{Weather Related?}
+        R1 -->|Yes| F[OpenAI GPT-4o Mini]
+        R1 -->|No| R2[Generate Redirect Response]
+        R2 --> MT[Record Metrics]
+
+        G[Weather Test Route] --> H[WeatherAPI.com]
+        N[Metrics API Route] --> MS[Metrics Store]
+
         F --> I[Function Calling Detection]
         I --> J[Weather Tool Execution]
         J --> H
@@ -144,16 +151,39 @@ graph TB
         K --> F
         F --> L[Enhanced AI Processing]
         L --> M[Generated Summary Response]
+        M --> MT
+    end
+
+    subgraph "Relevance System"
+        R --> QK[Quick Keyword Filter]
+        QK --> QK1{Obvious Case?}
+        QK1 -->|Yes| RC[Instant Classification]
+        QK1 -->|No| LC[LLM Classification]
+        LC --> R3[GPT-4o Mini Classifier]
+        RC --> R1
+        R3 --> R1
+    end
+
+    subgraph "Metrics & Monitoring"
+        MT[Metrics Tracker] --> MS[Metrics Store]
+        MS --> MA[Accuracy Tracking]
+        MS --> MP[Performance Metrics]
+        MS --> MF[False Positive/Negative Detection]
+        MS --> AL[Automated Alerts]
+        N --> MS
     end
 
     subgraph "External Services"
         F
-        H
+        H[WeatherAPI.com]
+        R3
     end
 
     A --> E
     A --> G
+    A --> N
     M --> E
+    R2 --> E
     E --> A
 ```
 
@@ -184,12 +214,83 @@ weather-agentic-ai/
 
 1. **User Input** → Chat Interface Component
 2. **Message Processing** → Chat API Route (`/api/chat`)
-3. **AI Processing** → OpenAI GPT-4o Mini with Function Calling Detection
-4. **Tool Execution** → Weather Tool calls OpenWeatherMap API (when weather queries detected)
-5. **Data Return** → Weather data returns to OpenAI GPT-4o Mini
-6. **Enhanced Processing** → GPT-4o Mini processes weather data and generates enhanced summary
-7. **Response Generation** → Structured AI response with enriched weather insights
-8. **UI Update** → Real-time message display with animations
+3. **🎯 Relevance Classification** → Quick keyword filter + LLM classification
+4. **📊 Decision Point** → Weather-related query validation
+5. **AI Processing** → OpenAI GPT-4o Mini with Function Calling Detection (if approved)
+6. **Tool Execution** → Weather Tool calls WeatherAPI.com (when weather queries detected)
+7. **Data Return** → Weather data returns to OpenAI GPT-4o Mini
+8. **Enhanced Processing** → GPT-4o Mini processes weather data and generates enhanced summary
+9. **📈 Metrics Recording** → Performance and accuracy tracking
+10. **Response Generation** → Structured AI response with enriched weather insights
+11. **UI Update** → Real-time message display with animations
+
+### **🎯 Relevance Classification Flow**
+
+```mermaid
+flowchart TD
+    Start([User Query]) --> Extract[Extract Latest Message]
+    Extract --> QuickCheck{Quick Keyword Check}
+
+    QuickCheck -->|Weather Keywords| Accept1[✅ Accept - Highly Relevant]
+    QuickCheck -->|Non-Weather Keywords| Reject1[🚫 Reject - Irrelevant]
+    QuickCheck -->|Unclear| LLM[🤖 LLM Classification]
+
+    LLM --> Classify[GPT-4o Mini Classifier]
+    Classify --> Confidence{Confidence Score}
+
+    Confidence -->|High Confidence| Decision{Is Relevant?}
+    Decision -->|Yes| Accept2[✅ Accept with Level]
+    Decision -->|No| Reject2[🚫 Reject with Reason]
+
+    Accept1 --> Process[Process Weather Query]
+    Accept2 --> Process
+    Reject1 --> Redirect[Generate Helpful Redirect]
+    Reject2 --> Redirect
+
+    Process --> Weather[Weather API Call]
+    Weather --> Response[AI Response Generation]
+    Response --> RecordSuccess[📊 Record Success Metrics]
+
+    Redirect --> RecordReject[📊 Record Rejection Metrics]
+
+    RecordSuccess --> Store[Metrics Store]
+    RecordReject --> Store
+    Store --> Monitor[📈 Performance Monitoring]
+
+    Monitor --> Alert{Performance Issues?}
+    Alert -->|Yes| Notify[🚨 Generate Alerts]
+    Alert -->|No| Continue[Continue Operation]
+```
+
+### **📊 Metrics & Quality Assurance**
+
+```mermaid
+graph LR
+    subgraph "Metrics Collection"
+        A[Query Classification] --> B[Response Time]
+        B --> C[Token Usage]
+        C --> D[Success Rate]
+        D --> E[User Feedback]
+    end
+
+    subgraph "Analysis Engine"
+        F[Accuracy Rate] --> G[False Positive Rate]
+        G --> H[False Negative Rate]
+        H --> I[Confidence Levels]
+        I --> J[Performance Trends]
+    end
+
+    subgraph "Quality Control"
+        K[Automated Alerts] --> L[Threshold Monitoring]
+        L --> M[Performance Reports]
+        M --> N[Optimization Recommendations]
+    end
+
+    B --> F
+    E --> F
+    J --> K
+    N --> A
+```
 
 ---
 
@@ -269,7 +370,7 @@ npm run lint
 
 ### **POST /api/chat**
 
-Main chat endpoint for AI conversations with weather integration.
+Main chat endpoint for AI conversations with weather integration and relevance checking.
 
 **Request Body:**
 
@@ -284,30 +385,52 @@ Main chat endpoint for AI conversations with weather integration.
 }
 ```
 
-**Response:**
+**Response (Weather Query - Accepted):**
 
 ```json
 {
-  "messages": [
-    {
-      "role": "assistant",
-      "content": "The current weather in Tokyo is...",
-      "weather_data": {
-        "temperature": 22,
-        "condition": "cloudy",
-        "humidity": 65
-      }
-    }
-  ]
+  "message": "The current weather in Tokyo is 22°C and cloudy...",
+  "usage": {
+    "total_tokens": 456
+  },
+  "classification": {
+    "isRelevant": true,
+    "level": "highly_relevant",
+    "confidence": 0.98,
+    "reasoning": "Clear weather information request"
+  },
+  "metrics": {
+    "responseTimeMs": 450,
+    "toolCallsExecuted": 1,
+    "totalTokensUsed": 678
+  }
+}
+```
+
+**Response (Non-Weather Query - Rejected):**
+
+```json
+{
+  "message": "I'm WeatherBot AI, specialized in weather information...",
+  "rejected": true,
+  "reason": "query_not_weather_related",
+  "classification": {
+    "isRelevant": false,
+    "level": "irrelevant",
+    "confidence": 0.98,
+    "reasoning": "Programming question unrelated to weather"
+  }
 }
 ```
 
 **Features:**
 
-- Function calling for weather data
-- Conversation memory
-- Error handling and fallbacks
-- Input validation and sanitization
+- 🎯 **Relevance Classification**: Automatic filtering of non-weather queries
+- 🤖 **Function Calling**: Weather data integration when needed
+- 🧠 **Conversation Memory**: Context-aware responses
+- 📊 **Metrics Tracking**: Performance and accuracy monitoring
+- 🛡️ **Error Handling**: Graceful degradation and fallbacks
+- ✅ **Input Validation**: Comprehensive request sanitization
 
 ### **GET /api/weather-test**
 
@@ -332,6 +455,91 @@ Testing endpoint for weather API functionality.
   "timestamp": "2024-01-15T10:30:00Z"
 }
 ```
+
+### **GET/POST /api/metrics**
+
+📊 **Metrics and monitoring endpoint for relevance classification and performance tracking.**
+
+#### **GET /api/metrics**
+
+Retrieve system performance metrics and classification analytics.
+
+**Query Parameters:**
+
+- `hours` (number, optional): Hours of data to include (default: 24)
+- `detailed` (boolean, optional): Include recent interactions (default: false)
+
+**Example Request:**
+
+```bash
+GET /api/metrics?detailed=true&hours=24
+```
+
+**Response:**
+
+```json
+{
+  "timestamp": "2024-01-20T10:30:00.000Z",
+  "relevance": {
+    "totalQueries": 150,
+    "relevantQueries": 117,
+    "irrelevantQueries": 33,
+    "accuracyRate": 94,
+    "rejectionRate": 22,
+    "averageConfidence": 89,
+    "falsePositives": 2,
+    "falseNegatives": 1,
+    "levelDistribution": {
+      "highly_relevant": 89,
+      "relevant": 28,
+      "neutral": 15,
+      "irrelevant": 33
+    }
+  },
+  "performance": {
+    "averageResponseTime": 340,
+    "successRate": 98,
+    "averageTokensUsed": 245,
+    "totalInteractions": 150
+  },
+  "evaluation": {
+    "alertLevel": "low",
+    "issues": [],
+    "recommendation": "Classification performance is optimal."
+  }
+}
+```
+
+#### **POST /api/metrics**
+
+Record user feedback about classification accuracy for continuous improvement.
+
+**Request Body:**
+
+```json
+{
+  "isClassificationWrong": true,
+  "actuallyWeatherRelated": false
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Feedback recorded successfully"
+}
+```
+
+**Features:**
+
+- 📈 **Real-time Analytics**: Live performance monitoring
+- 🎯 **Classification Accuracy**: Track relevance detection performance
+- ⚡ **Performance Metrics**: Response times and resource usage
+- 🔄 **User Feedback Loop**: Continuous improvement through corrections
+- 🚨 **Automated Alerts**: Quality threshold monitoring
+- 📊 **Detailed Analytics**: Exportable metrics for analysis
 
 ---
 
